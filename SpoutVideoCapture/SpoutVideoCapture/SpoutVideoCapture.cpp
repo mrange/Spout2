@@ -2,8 +2,10 @@
 
 #include <windows.h>
 
+#include <atomic>
 #include <cstdio>
 #include <exception>
+#include <future>
 #include <memory>
 #include <random>
 #include <stdexcept>
@@ -15,9 +17,18 @@
 
 #pragma comment(lib, "Opengl32.lib")
 
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+
+#define CHECK(msg, v) check(__FILE__ "(" TOSTRING (__LINE__) ") Aborted when trying to: " msg, v)
+
+#define CHECK_HR(msg, hr) check_hr(__FILE__ "(" TOSTRING (__LINE__) ") Aborted when trying to: " msg, hr)
 
 namespace
 {
+  struct unit {};
+  constexpr unit unit_value;
+
   template<typename TOnExit>
   struct on_exit_guard 
   {
@@ -44,7 +55,7 @@ namespace
       if (execute_on_exit)
       {
         execute_on_exit = false;
-        on_exit();
+        on_exit ();
       }
     }
 
@@ -55,71 +66,85 @@ namespace
   };
 
   template<typename TOnExit>
-  auto on_exit(TOnExit && on_exit)
+  auto on_exit (TOnExit && on_exit)
   {
     return on_exit_guard<std::decay_t<TOnExit>> (std::forward<TOnExit> (on_exit));
   }
 
-
-  HWND  hwnd          ;
-  HDC   hdc           ;
-  HGLRC hglrc         ;
-  HGLRC shared_hglrc  ;
-
-  bool init_open_gl ()
+  template<typename T>
+  T check (const char* abort_with_message, T && v)
   {
-    hwnd  = CreateWindowA ("BUTTON", "VDJ Sender", WS_OVERLAPPEDWINDOW | CS_OWNDC, 0, 0, 32, 32, NULL, NULL, NULL, NULL);
-	  hdc   = GetDC (hwnd);
+    if (!v)
+    {
+      throw std::runtime_error (abort_with_message);
+    }
 
-	  PIXELFORMATDESCRIPTOR pfd {};
-	  pfd.nSize         = sizeof (pfd);
-	  pfd.nVersion      = 1;
-	  pfd.dwFlags       = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
-	  pfd.iPixelType    = PFD_TYPE_RGBA;
-	  pfd.cColorBits    = 32;
-	  pfd.cDepthBits    = 24;
-	  pfd.cStencilBits  = 8;
-	  pfd.iLayerType    = PFD_MAIN_PLANE;
-
-	  auto format = ChoosePixelFormat (hdc, &pfd);
-	  SetPixelFormat (hdc, format, &pfd);
-	  hglrc = wglCreateContext (hdc);
-	  wglMakeCurrent (hdc, hglrc);
-
-//    shared_hglrc = wglCreateContext (hdc);
-//	  wglShareLists (hsrc, hrc);
-
-
-	  return true;
-
+    return std::forward<T> (v);
   }
 
+  HRESULT check_hr (const char* abort_with_message, HRESULT hr)
+  {
+    if (FAILED (hr))
+    {
+      throw std::runtime_error (abort_with_message);
+    }
+
+    return hr;
+  }
+
+  char const app_name [] = "Spout Video Capture";
 
 }
 
-int main()
+int main ()
 {
   try
   {
-    HRESULT hr = CoInitialize (0);
-    if (FAILED (hr))
-    {
-      throw new std::runtime_error ("Hello");
-    }
+    auto done = std::async ([] 
+      {
+        // Try to read a char from stdin (blocking)
+        auto ignore = std::getchar ();
+        return unit_value; 
+      });
 
-    init_open_gl ();
+    std::printf ("Initializing video capture...\n");
 
+    CHECK_HR ("Initialize COM Runtime", CoInitialize (0));
+    auto on_exit_co_uninitialize = on_exit ([] { CoUninitialize (); });
+
+    // An invisible window used to initialze Open GL with
+    auto hwnd                   = CHECK ("Create invisible window for Open GL", CreateWindowA ("BUTTON", app_name, WS_OVERLAPPEDWINDOW | CS_OWNDC, 0, 0, 32, 32, nullptr, nullptr, nullptr, nullptr));
+    auto on_exit_destroy_window = on_exit ([hwnd] { DestroyWindow (hwnd); });
+
+    auto hdc                = CHECK ("Get device context for Open GL", GetDC (hwnd));
+    auto on_exit_release_dc = on_exit ([hwnd, hdc] { ReleaseDC (hwnd, hdc); });
+
+    PIXELFORMATDESCRIPTOR pfd {};
+    pfd.nSize         = sizeof (pfd);
+    pfd.nVersion      = 1;
+    pfd.dwFlags       = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    pfd.iPixelType    = PFD_TYPE_RGBA;
+    pfd.cColorBits    = 32;
+    pfd.cDepthBits    = 24;
+    pfd.cStencilBits  = 8;
+    pfd.iLayerType    = PFD_MAIN_PLANE;
+
+    auto format = CHECK ("Choose pixel format for device context", ChoosePixelFormat (hdc, &pfd));
+    CHECK ("Set pixel format for device context", SetPixelFormat (hdc, format, &pfd));
+
+    auto hglrc                      = CHECK ("Create OpenGL context", wglCreateContext (hdc));
+    auto on_exit_delete_gl_context  = on_exit ([hglrc] { wglDeleteContext (hglrc); });
+
+    CHECK ("Make OpenGL context current", wglMakeCurrent (hdc, hglrc));
+    auto on_exit_unselect_gl_context  = on_exit ([hdc] { wglMakeCurrent (hdc, nullptr); });
 
     SpoutSender sender;
 
-    auto width = 640;
+    auto width  = 640;
     auto height = 480;
 
-    auto sender_created = sender.CreateSender ("Spout Video Capture", width, height);
-    if (!sender_created)
-    {
-      throw new std::runtime_error ("Failed to create spout sender");
-    }
+    CHECK ("Create Spout sender", sender.CreateSender (app_name, width, height));    
+    auto on_exit_release_sender = on_exit ([&sender] { sender.ReleaseSender (200); });
 
     std::vector<unsigned char> image;
     image.resize (width*height*4);
@@ -130,9 +155,13 @@ int main()
     auto cont = true;
     auto i = 0;
 
-    while (cont)
+    std::printf ("Initializing video capture done, sending frames as: %s...\n", app_name);
+
+    std::printf ("Hit enter to exit");
+
+    while (done.wait_for (std::chrono::milliseconds (20)) == future_status::timeout)
     {
-      for(auto i = 0U; i < image.size(); ++i) 
+      for (auto i = 0U; i < image.size (); ++i) 
       {
         image[i] = random () >> 24;
       }
@@ -141,14 +170,11 @@ int main()
       {
         std::printf ("Sending frame #%d\n", i);
       }
-      sender.SendImage(&image.front (), width, height);
-      Sleep(20);
+      sender.SendImage (&image.front (), width, height);
     }
 
+    std::printf ("Ok, we are done, exiting...");
 
-    auto on_exit_co_uninitialize = on_exit ([] { CoUninitialize (); });
-
-    std::printf("hello \n");
     return 0;
   }
   catch (std::exception const & e)
