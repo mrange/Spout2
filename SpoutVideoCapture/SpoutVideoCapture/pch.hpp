@@ -13,6 +13,9 @@
 #include <intrin.h>
 #include <iostream>
 #include <map>
+#include <mfapi.h>
+#include <mfidl.h>
+#include <mfreadwrite.h>
 #include <Mmsystem.h>
 #include <set>
 #include <shlwapi.h>

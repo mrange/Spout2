@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <mfapi.h>
 #include <mfidl.h>
+#include <mfreadwrite.h>
 
 #include <atomic>
 #include <cstdio>
@@ -19,8 +20,11 @@
 
 #pragma comment(lib, "Mf.lib")
 #pragma comment(lib, "Mfplat.lib")
-#pragma comment(lib, "Opengl32.lib")
+#pragma comment(lib, "Mfreadwrite.lib")
+#pragma comment(lib, "mfuuid.lib")
 
+#pragma comment(lib, "Opengl32.lib")
+	
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 
@@ -117,6 +121,9 @@ int main ()
     CHECK_HR ("Initialize COM Runtime", CoInitialize (0));
     auto on_exit_co_uninitialize = on_exit ([] { CoUninitialize (); });
 
+    CHECK_HR ("Initialize Media Foundation", MFStartup (MF_VERSION));
+    auto on_exit_mf_shutdown = on_exit ([] { MFShutdown (); });
+
     IMFAttributes * mf_attributes = nullptr;
 
     CHECK_HR ("Getting media foundation attributes", MFCreateAttributes(&mf_attributes, 1));
@@ -141,7 +148,7 @@ int main ()
       throw std::runtime_error ("No video sources found");
     }
 
-    std::printf ("Found %d video sources", mf_device_count);
+    std::printf ("Found %d video sources\n", mf_device_count);
     for (auto i = 0U; i < mf_device_count; ++i)
     {
       auto mf_device = mf_devices[i];
@@ -170,15 +177,56 @@ int main ()
     auto mf_device = mf_devices[0];
 
     IMFMediaSource * mf_source = nullptr;
-   
-    /*
     CHECK_HR ("Activate video source", mf_device->ActivateObject (IID_PPV_ARGS (&mf_source)));
     auto on_exit_release_source = on_exit ([mf_source] { release (mf_source); });
 
-    mf_source->
+    IMFSourceReader * mf_source_reader = nullptr;
+    CHECK_HR ("Create video source reader", MFCreateSourceReaderFromMediaSource (mf_source, mf_attributes, &mf_source_reader));
+    auto on_exit_release_source_reader = on_exit ([mf_source_reader] { release (mf_source_reader); });
+
+    DWORD stream_index = 0;
+
+    for (;;)
+    {
+      IMFMediaType * mf_media_type = 0;
+      auto find_hr = mf_source_reader->GetCurrentMediaType (stream_index, &mf_media_type);
+
+      if (SUCCEEDED (find_hr))
+      {
+        auto on_exit_release_media_type = on_exit ([mf_media_type] { release (mf_media_type); });
+        GUID major_type {};
+        CHECK_HR ("Get major media type", mf_media_type->GetMajorType (&major_type));
+        if (major_type == MFMediaType_Video)
+        {
+          GUID minor_type {};
+          CHECK_HR ("Get minor media type", mf_media_type->GetGUID (MF_MT_SUBTYPE, &minor_type));
+          CHECK_HR ("Set minor media type", mf_media_type->SetGUID (MF_MT_SUBTYPE, MFVideoFormat_ARGB32));
+          CHECK_HR ("Set media type", mf_source_reader->SetCurrentMediaType (stream_index, 0, mf_media_type));
+          break;
+        }
+      }
+      else
+      {
+        throw std::runtime_error ("No video stream found");
+      }
+      ++stream_index;
+    }
+
+//    DWORD     stream_index      = 0;
+    DWORD     stream_flags      = 0;
+    LONGLONG  stream_timestamp  = 0;
+    IMFSample * mf_sample       = nullptr;
+    CHECK_HR ("Read video sample", mf_source_reader->ReadSample (
+        stream_index
+      , 0
+      , &stream_index
+      , &stream_flags
+      , &stream_timestamp
+      , &mf_sample));
+    auto on_exit_release_sample = on_exit ([mf_sample] { release (mf_sample); });
+
 
     throw std::runtime_error ("Good bye");
-    */
 
 
     // An invisible window used to initialze Open GL with
