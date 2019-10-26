@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Spout">
+      <UniqueIdentifier>{00336184-d487-4943-b00f-26e8e3d8285b}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="SpoutVideoCapture.cpp" />
+    <ClCompile Include="pch.cpp" />
+    <ClCompile Include="..\..\SpoutSDK\Source\SpoutCopy.cpp">
+      <Filter>Spout</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\SpoutSDK\Source\SpoutDirectX.cpp">
+      <Filter>Spout</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\SpoutSDK\Source\SpoutGLDXinterop.cpp">
+      <Filter>Spout</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\SpoutSDK\Source\SpoutGLextensions.cpp">
+      <Filter>Spout</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\SpoutSDK\Source\SpoutMemoryShare.cpp">
+      <Filter>Spout</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\SpoutSDK\Source\SpoutReceiver.cpp">
+      <Filter>Spout</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\SpoutSDK\Source\SpoutSDK.cpp">
+      <Filter>Spout</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\SpoutSDK\Source\SpoutSender.cpp">
+      <Filter>Spout</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\SpoutSDK\Source\SpoutSenderMemory.cpp">
+      <Filter>Spout</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\SpoutSDK\Source\SpoutSenderNames.cpp">
+      <Filter>Spout</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\SpoutSDK\Source\SpoutSharedMemory.cpp">
+      <Filter>Spout</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="pch.hpp" />
+  </ItemGroup>
+</Project>
