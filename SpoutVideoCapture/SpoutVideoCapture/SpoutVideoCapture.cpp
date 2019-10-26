@@ -1,6 +1,8 @@
 #include "pch.hpp"
 
 #include <windows.h>
+#include <mfapi.h>
+#include <mfidl.h>
 
 #include <atomic>
 #include <cstdio>
@@ -15,6 +17,8 @@
 #include "../../SpoutSDK/Source/SpoutSender.h"
 
 
+#pragma comment(lib, "Mf.lib")
+#pragma comment(lib, "Mfplat.lib")
 #pragma comment(lib, "Opengl32.lib")
 
 #define STRINGIFY(x) #x
@@ -100,17 +104,26 @@ int main ()
 {
   try
   {
-    auto done = std::async ([] 
-      {
-        // Try to read a char from stdin (blocking)
-        auto ignore = std::getchar ();
-        return unit_value; 
-      });
-
     std::printf ("Initializing video capture...\n");
 
     CHECK_HR ("Initialize COM Runtime", CoInitialize (0));
     auto on_exit_co_uninitialize = on_exit ([] { CoUninitialize (); });
+
+    IMFAttributes * mf_attributes = nullptr;
+
+    CHECK_HR ("Getting media foundation attributes", MFCreateAttributes(&mf_attributes, 1));
+    auto on_exit_release_attributes = on_exit ([mf_attributes] { mf_attributes->Release (); });
+
+    CHECK_HR ("Setting media source query to video", mf_attributes->SetGUID (MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID));
+
+    IMFActivate ** mf_devices = nullptr;
+    UINT32 mf_device_count = 0;
+    CHECK_HR ("Enumerating video sources", MFEnumDeviceSources (mf_attributes, &mf_devices, &mf_device_count));
+
+    if (mf_device_count == 0)
+    {
+      throw std::runtime_error ("No video sources found");
+    }
 
     // An invisible window used to initialze Open GL with
     auto hwnd                   = CHECK ("Create invisible window for Open GL", CreateWindowA ("BUTTON", app_name, WS_OVERLAPPEDWINDOW | CS_OWNDC, 0, 0, 32, 32, nullptr, nullptr, nullptr, nullptr));
@@ -158,6 +171,13 @@ int main ()
     std::printf ("Initializing video capture done, sending frames as: %s...\n", app_name);
 
     std::printf ("Hit enter to exit");
+
+    auto done = std::async ([] 
+      {
+        // Try to read a char from stdin (blocking)
+        auto ignore = std::getchar ();
+        return unit_value; 
+      });
 
     while (done.wait_for (std::chrono::milliseconds (20)) == future_status::timeout)
     {
