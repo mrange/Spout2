@@ -75,6 +75,14 @@ namespace
     return on_exit_guard<std::decay_t<TOnExit>> (std::forward<TOnExit> (on_exit));
   }
 
+  void release(IUnknown * p)
+  {
+    if (p)
+    {
+      p->Release ();
+    }
+  }
+
   template<typename T>
   T check (const char* abort_with_message, T && v)
   {
@@ -112,18 +120,66 @@ int main ()
     IMFAttributes * mf_attributes = nullptr;
 
     CHECK_HR ("Getting media foundation attributes", MFCreateAttributes(&mf_attributes, 1));
-    auto on_exit_release_attributes = on_exit ([mf_attributes] { mf_attributes->Release (); });
+    auto on_exit_release_attributes = on_exit ([mf_attributes] { release (mf_attributes); });
 
     CHECK_HR ("Setting media source query to video", mf_attributes->SetGUID (MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID));
 
     IMFActivate ** mf_devices = nullptr;
     UINT32 mf_device_count = 0;
     CHECK_HR ("Enumerating video sources", MFEnumDeviceSources (mf_attributes, &mf_devices, &mf_device_count));
+    auto on_exit_release_devices = on_exit ([mf_devices, mf_device_count] 
+    {
+      for (auto i = 0U; i < mf_device_count; ++i)
+      {
+        release (mf_devices[i]);
+      }
+      CoTaskMemFree (mf_devices);
+    });
 
     if (mf_device_count == 0)
     {
       throw std::runtime_error ("No video sources found");
     }
+
+    std::printf ("Found %d video sources", mf_device_count);
+    for (auto i = 0U; i < mf_device_count; ++i)
+    {
+      auto mf_device = mf_devices[i];
+      UINT32 mf_device_name_length = 0;
+      std::vector<WCHAR> mf_device_name;
+
+      CHECK_HR ("Get video source name length", mf_device->GetStringLength (
+          MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME
+        , &mf_device_name_length
+        ));
+
+      mf_device_name.resize (mf_device_name_length + 1);
+
+      CHECK_HR ("Get video source name", mf_device->GetString (
+          MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME
+        , &mf_device_name.front ()
+        , mf_device_name.size ()
+        , nullptr
+        ));
+      mf_device_name.back () = 0;
+      std::printf ("  %S\n", &mf_device_name.front ());
+    }
+
+    std::printf ("Selecting the first video source\n");
+
+    auto mf_device = mf_devices[0];
+
+    IMFMediaSource * mf_source = nullptr;
+   
+    /*
+    CHECK_HR ("Activate video source", mf_device->ActivateObject (IID_PPV_ARGS (&mf_source)));
+    auto on_exit_release_source = on_exit ([mf_source] { release (mf_source); });
+
+    mf_source->
+
+    throw std::runtime_error ("Good bye");
+    */
+
 
     // An invisible window used to initialze Open GL with
     auto hwnd                   = CHECK ("Create invisible window for Open GL", CreateWindowA ("BUTTON", app_name, WS_OVERLAPPEDWINDOW | CS_OWNDC, 0, 0, 32, 32, nullptr, nullptr, nullptr, nullptr));
