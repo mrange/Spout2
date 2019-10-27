@@ -211,10 +211,14 @@ int main ()
         GUID major_type {};
         GUID minor_type {};
 
-        CHECK_HR ("Get major media type", mf_media_type->GetGUID (MF_MT_MAJOR_TYPE, &major_type));
-        CHECK_HR ("Get minor media type", mf_media_type->GetGUID (MF_MT_SUBTYPE, &minor_type));
+        CHECK_HR ("Get major media type", mf_native_media_type->GetGUID (MF_MT_MAJOR_TYPE, &major_type));
+        CHECK_HR ("Get minor media type", mf_native_media_type->GetGUID (MF_MT_SUBTYPE, &minor_type));
         printf ("%S\n", to_string (major_type).c_str ());
         printf ("%S\n", to_string (minor_type).c_str ());
+
+        char x[16]="";
+        memcpy(x, &minor_type.Data1, 4);
+        printf ("%s\n", x);
       }
       else
       {
