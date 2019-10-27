@@ -185,11 +185,11 @@ int main ()
     auto on_exit_release_source_reader = on_exit ([mf_source_reader] { release (mf_source_reader); });
 
     CHECK_HR ("Deselect all streams" ,mf_source_reader->SetStreamSelection (MF_SOURCE_READER_ALL_STREAMS, FALSE));
-
     CHECK_HR ("Select first video stream" ,mf_source_reader->SetStreamSelection (MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE));
 
     IMFMediaType * mf_media_type = 0;
-    CHECK_HR ("Create media type", MFCreateMediaType(&mf_media_type));
+//    CHECK_HR ("Create media type", MFCreateMediaType(&mf_media_type));
+    CHECK_HR ("Get current media type", mf_source_reader->GetCurrentMediaType (MF_SOURCE_READER_FIRST_VIDEO_STREAM, &mf_media_type));
     auto on_exit_release_media_type = on_exit ([mf_media_type] { release (mf_media_type); });
 
     CHECK_HR ("Set major media type", mf_media_type->SetGUID (MF_MT_MAJOR_TYPE, MFMediaType_Video));
@@ -198,43 +198,9 @@ int main ()
 
     CHECK_HR ("Select first video stream" ,mf_source_reader->SetStreamSelection (MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE));
 
-    while (true)
-    {
-      Sleep(20);
-      DWORD     stream_index      = 0;
-      DWORD     stream_flags      = 0;
-      LONGLONG  stream_timestamp  = 0;
-      IMFSample * mf_sample       = nullptr;
-      CHECK_HR ("Read video sample", mf_source_reader->ReadSample (
-          MF_SOURCE_READER_FIRST_VIDEO_STREAM
-        , 0
-        , &stream_index
-        , &stream_flags
-        , &stream_timestamp
-        , &mf_sample));
-      auto on_exit_release_sample = on_exit ([mf_sample] { release (mf_sample); });
-
-      if (mf_sample)
-      {
-        DWORD buffer_count = 0;
-        CHECK_HR ("Get video buffer count", mf_sample->GetBufferCount (&buffer_count));
-        printf ("Buffer count: %d\n", buffer_count);
-        if (buffer_count > 0)
-        {
-          IMFMediaBuffer * mf_buffer = nullptr;
-          CHECK_HR ("Get video buffer", mf_sample->GetBufferByIndex (0, &mf_buffer));
-          auto on_exit_release_buffer = on_exit ([mf_buffer] { release (mf_buffer); });
-
-          BYTE *  buffer        = nullptr ;
-          DWORD   buffer_length = 0       ;
-          CHECK_HR ("Lock video buffer", mf_buffer->Lock (&buffer, nullptr, &buffer_length));
-          CHECK_HR ("Unlock video buffer", mf_buffer->Unlock ());
-        }
-      }
-    }
-
-//    throw std::runtime_error ("Good bye");
-
+    UINT32 frame_width   = 0;
+    UINT32 frame_height  = 0;
+    CHECK_HR ("Read video frame size", MFGetAttributeSize (mf_media_type, MF_MT_FRAME_SIZE, &frame_width, &frame_height));
 
     // An invisible window used to initialze Open GL with
     auto hwnd                   = CHECK ("Create invisible window for Open GL", CreateWindowA ("BUTTON", app_name, WS_OVERLAPPEDWINDOW | CS_OWNDC, 0, 0, 32, 32, nullptr, nullptr, nullptr, nullptr));
@@ -264,17 +230,8 @@ int main ()
 
     SpoutSender sender;
 
-    auto width  = 640;
-    auto height = 480;
-
-    CHECK ("Create Spout sender", sender.CreateSender (app_name, width, height));    
+    CHECK ("Create Spout sender", sender.CreateSender (app_name, frame_width, frame_height));    
     auto on_exit_release_sender = on_exit ([&sender] { sender.ReleaseSender (200); });
-
-    std::vector<unsigned char> image;
-    image.resize (width*height*4);
-
-    std::mt19937 random;
-    random.seed (19740531U);
 
     auto cont = true;
     auto i = 0;
@@ -292,16 +249,46 @@ int main ()
 
     while (done.wait_for (std::chrono::milliseconds (20)) == future_status::timeout)
     {
-      for (auto i = 0U; i < image.size (); ++i) 
+      DWORD     stream_index      = 0;
+      DWORD     stream_flags      = 0;
+      LONGLONG  stream_timestamp  = 0;
+      IMFSample * mf_sample       = nullptr;
+      CHECK_HR ("Read video sample", mf_source_reader->ReadSample (
+          MF_SOURCE_READER_FIRST_VIDEO_STREAM
+        , 0
+        , &stream_index
+        , &stream_flags
+        , &stream_timestamp
+        , &mf_sample));
+      auto on_exit_release_sample = on_exit ([mf_sample] { release (mf_sample); });
+
+      if (mf_sample)
       {
-        image[i] = random () >> 24;
+        DWORD buffer_count = 0;
+        CHECK_HR ("Get video buffer count", mf_sample->GetBufferCount (&buffer_count));
+        printf ("Buffer count: %d\n", buffer_count);
+        if (buffer_count > 0)
+        {
+          IMFMediaBuffer * mf_buffer = nullptr;
+          CHECK_HR ("Get video buffer", mf_sample->GetBufferByIndex (0, &mf_buffer));
+          auto on_exit_release_buffer = on_exit ([mf_buffer] { release (mf_buffer); });
+
+          BYTE *  buffer        = nullptr ;
+          DWORD   buffer_length = 0       ;
+          CHECK_HR ("Lock video buffer", mf_buffer->Lock (&buffer, nullptr, &buffer_length));
+          auto on_exit_unlock_buffer = on_exit ([mf_buffer] { mf_buffer->Unlock (); });
+
+          if ((i % 60) == 0)
+          {
+            std::printf ("Sending frame #%d\n", i);
+          }
+
+          if (buffer && buffer_length == 4*frame_width*frame_height)
+          {
+            sender.SendImage (buffer, frame_width, frame_height);
+          }
+        }
       }
-      ++i;
-      if ((i % 60) == 0)
-      {
-        std::printf ("Sending frame #%d\n", i);
-      }
-      sender.SendImage (&image.front (), width, height);
     }
 
     std::printf ("Ok, we are done, exiting...");
