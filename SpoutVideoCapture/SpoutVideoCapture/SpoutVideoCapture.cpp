@@ -108,6 +108,13 @@ namespace
     return hr;
   }
 
+  std::wstring to_string (GUID const & v)
+  {
+    wchar_t s[64];
+    StringFromGUID2 (v, s, 64);
+    return s;
+  }
+
   char const app_name [] = "Spout Video Capture";
 
 }
@@ -191,6 +198,32 @@ int main ()
 //    CHECK_HR ("Create media type", MFCreateMediaType(&mf_media_type));
     CHECK_HR ("Get current media type", mf_source_reader->GetCurrentMediaType (MF_SOURCE_READER_FIRST_VIDEO_STREAM, &mf_media_type));
     auto on_exit_release_media_type = on_exit ([mf_media_type] { release (mf_media_type); });
+
+    DWORD index = 0;
+
+    for (;;) 
+    {
+      IMFMediaType * mf_native_media_type = 0;
+      auto hr = mf_source_reader->GetNativeMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, index, &mf_native_media_type);
+      if (SUCCEEDED (hr))
+      {
+        auto on_exit_release_media_type = on_exit ([mf_native_media_type] { release (mf_native_media_type); });
+        GUID major_type {};
+        GUID minor_type {};
+
+        CHECK_HR ("Get major media type", mf_media_type->GetGUID (MF_MT_MAJOR_TYPE, &major_type));
+        CHECK_HR ("Get minor media type", mf_media_type->GetGUID (MF_MT_SUBTYPE, &minor_type));
+        printf ("%S\n", to_string (major_type).c_str ());
+        printf ("%S\n", to_string (minor_type).c_str ());
+      }
+      else
+      {
+        break;
+      }
+
+      ++index;
+    }
+
 
     CHECK_HR ("Set major media type", mf_media_type->SetGUID (MF_MT_MAJOR_TYPE, MFMediaType_Video));
     CHECK_HR ("Set minor media type", mf_media_type->SetGUID (MF_MT_SUBTYPE, MFVideoFormat_ARGB32));
