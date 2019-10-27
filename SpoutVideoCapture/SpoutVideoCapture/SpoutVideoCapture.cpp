@@ -238,7 +238,7 @@ int main ()
 
     std::printf ("Initializing video capture done, sending frames as: %s...\n", app_name);
 
-    std::printf ("Hit enter to exit");
+    std::printf ("Hit enter to exit\n");
 
     auto done = std::async ([] 
       {
@@ -249,6 +249,7 @@ int main ()
 
     while (done.wait_for (std::chrono::milliseconds (20)) == future_status::timeout)
     {
+      ++i;
       DWORD     stream_index      = 0;
       DWORD     stream_flags      = 0;
       LONGLONG  stream_timestamp  = 0;
@@ -266,7 +267,6 @@ int main ()
       {
         DWORD buffer_count = 0;
         CHECK_HR ("Get video buffer count", mf_sample->GetBufferCount (&buffer_count));
-        printf ("Buffer count: %d\n", buffer_count);
         if (buffer_count > 0)
         {
           IMFMediaBuffer * mf_buffer = nullptr;
