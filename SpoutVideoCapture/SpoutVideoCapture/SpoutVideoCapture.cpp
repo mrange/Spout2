@@ -184,49 +184,56 @@ int main ()
     CHECK_HR ("Create video source reader", MFCreateSourceReaderFromMediaSource (mf_source, mf_attributes, &mf_source_reader));
     auto on_exit_release_source_reader = on_exit ([mf_source_reader] { release (mf_source_reader); });
 
-    DWORD stream_index = 0;
+    CHECK_HR ("Deselect all streams" ,mf_source_reader->SetStreamSelection (MF_SOURCE_READER_ALL_STREAMS, FALSE));
 
-    for (;;)
+    CHECK_HR ("Select first video stream" ,mf_source_reader->SetStreamSelection (MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE));
+
+    IMFMediaType * mf_media_type = 0;
+    CHECK_HR ("Create media type", MFCreateMediaType(&mf_media_type));
+    auto on_exit_release_media_type = on_exit ([mf_media_type] { release (mf_media_type); });
+
+    CHECK_HR ("Set major media type", mf_media_type->SetGUID (MF_MT_MAJOR_TYPE, MFMediaType_Video));
+    CHECK_HR ("Set minor media type", mf_media_type->SetGUID (MF_MT_SUBTYPE, MFVideoFormat_ARGB32));
+    CHECK_HR ("Set media type", mf_source_reader->SetCurrentMediaType (MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, mf_media_type));
+
+    CHECK_HR ("Select first video stream" ,mf_source_reader->SetStreamSelection (MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE));
+
+    while (true)
     {
-      IMFMediaType * mf_media_type = 0;
-      auto find_hr = mf_source_reader->GetCurrentMediaType (stream_index, &mf_media_type);
+      Sleep(20);
+      DWORD     stream_index      = 0;
+      DWORD     stream_flags      = 0;
+      LONGLONG  stream_timestamp  = 0;
+      IMFSample * mf_sample       = nullptr;
+      CHECK_HR ("Read video sample", mf_source_reader->ReadSample (
+          MF_SOURCE_READER_FIRST_VIDEO_STREAM
+        , 0
+        , &stream_index
+        , &stream_flags
+        , &stream_timestamp
+        , &mf_sample));
+      auto on_exit_release_sample = on_exit ([mf_sample] { release (mf_sample); });
 
-      if (SUCCEEDED (find_hr))
+      if (mf_sample)
       {
-        auto on_exit_release_media_type = on_exit ([mf_media_type] { release (mf_media_type); });
-        GUID major_type {};
-        CHECK_HR ("Get major media type", mf_media_type->GetMajorType (&major_type));
-        if (major_type == MFMediaType_Video)
+        DWORD buffer_count = 0;
+        CHECK_HR ("Get video buffer count", mf_sample->GetBufferCount (&buffer_count));
+        printf ("Buffer count: %d\n", buffer_count);
+        if (buffer_count > 0)
         {
-          GUID minor_type {};
-          CHECK_HR ("Get minor media type", mf_media_type->GetGUID (MF_MT_SUBTYPE, &minor_type));
-          CHECK_HR ("Set minor media type", mf_media_type->SetGUID (MF_MT_SUBTYPE, MFVideoFormat_ARGB32));
-          CHECK_HR ("Set media type", mf_source_reader->SetCurrentMediaType (stream_index, 0, mf_media_type));
-          break;
+          IMFMediaBuffer * mf_buffer = nullptr;
+          CHECK_HR ("Get video buffer", mf_sample->GetBufferByIndex (0, &mf_buffer));
+          auto on_exit_release_buffer = on_exit ([mf_buffer] { release (mf_buffer); });
+
+          BYTE *  buffer        = nullptr ;
+          DWORD   buffer_length = 0       ;
+          CHECK_HR ("Lock video buffer", mf_buffer->Lock (&buffer, nullptr, &buffer_length));
+          CHECK_HR ("Unlock video buffer", mf_buffer->Unlock ());
         }
       }
-      else
-      {
-        throw std::runtime_error ("No video stream found");
-      }
-      ++stream_index;
     }
 
-//    DWORD     stream_index      = 0;
-    DWORD     stream_flags      = 0;
-    LONGLONG  stream_timestamp  = 0;
-    IMFSample * mf_sample       = nullptr;
-    CHECK_HR ("Read video sample", mf_source_reader->ReadSample (
-        stream_index
-      , 0
-      , &stream_index
-      , &stream_flags
-      , &stream_timestamp
-      , &mf_sample));
-    auto on_exit_release_sample = on_exit ([mf_sample] { release (mf_sample); });
-
-
-    throw std::runtime_error ("Good bye");
+//    throw std::runtime_error ("Good bye");
 
 
     // An invisible window used to initialze Open GL with
